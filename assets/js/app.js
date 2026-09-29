@@ -331,26 +331,44 @@ function getCashFlowPeriods(range){
 }
 function getCashFlowAmounts(period){
  const amountFor=(arr,key)=>sum(arr.filter(x=>{const d=String(x.date||"");if(period.type==="day")return period.keys.includes(d);if(period.type==="week"){const dt=new Date(`${d}T00:00:00`);const current=period.starts.findIndex(st=>{const end=new Date(st);end.setDate(end.getDate()+6);return dt>=st&&dt<=end});return current>=0;}return monthKey(d)===key}),"amount");
- if(period.type==="day")return {income:period.keys.map(k=>amountFor(data.income,k)),expense:period.keys.map(k=>amountFor(data.expense,k))};
- if(period.type==="week")return {income:period.starts.map(st=>{const end=new Date(st);end.setDate(end.getDate()+6);return sum(data.income.filter(x=>{const d=new Date(`${x.date}T00:00:00`);return d>=st&&d<=end}),"amount")}),expense:period.starts.map(st=>{const end=new Date(st);end.setDate(end.getDate()+6);return sum(data.expense.filter(x=>{const d=new Date(`${x.date}T00:00:00`);return d>=st&&d<=end}),"amount")})};
- return {income:period.keys.map(k=>sum(data.income.filter(x=>monthKey(x.date)===k),"amount")),expense:period.keys.map(k=>sum(data.expense.filter(x=>monthKey(x.date)===k),"amount"))};
+ let income,expense;
+ if(period.type==="day"){
+   income=period.keys.map(k=>amountFor(data.income,k));
+   expense=period.keys.map(k=>amountFor(data.expense,k));
+ } else if(period.type==="week"){
+   income=period.starts.map(st=>{const end=new Date(st);end.setDate(end.getDate()+6);return sum(data.income.filter(x=>{const d=new Date(`${x.date}T00:00:00`);return d>=st&&d<=end}),"amount")});
+   expense=period.starts.map(st=>{const end=new Date(st);end.setDate(end.getDate()+6);return sum(data.expense.filter(x=>{const d=new Date(`${x.date}T00:00:00`);return d>=st&&d<=end}),"amount")});
+ } else {
+   income=period.keys.map(k=>sum(data.income.filter(x=>monthKey(x.date)===k),"amount"));
+   expense=period.keys.map(k=>sum(data.expense.filter(x=>monthKey(x.date)===k),"amount"));
+ }
+ // Savings goals, investments, and protection are stored as feature balances rather
+ // than dated transaction rows. To keep the cash-flow view useful, show their current
+ // recorded totals in the latest selected period. New dated transaction records can
+ // still be added to Income/Spending normally.
+ const featureAtLatest=(value)=>period.keys.map((_,i)=>i===period.keys.length-1?Number(value||0):0);
+ const savings=sum(data.goals||[],"current");
+ const investments=sum(data.investments||[],"value");
+ const protection=sum(data.protection||[]);
+ return {income,expense,savings:featureAtLatest(savings),investments:featureAtLatest(investments),protection:featureAtLatest(protection)};
 }
 function showChartEmpty(canvas,message,detail){const panel=canvas.closest(".chart-panel");if(!panel)return;canvas.style.display="none";let empty=panel.querySelector(`.chart-empty[data-for="${canvas.id}"]`);if(!empty){empty=document.createElement("div");empty.className="chart-empty";empty.dataset.for=canvas.id;canvas.parentNode.insertBefore(empty,canvas.nextSibling)}empty.innerHTML=`<div class="chart-empty-icon">${canvas.id==="cashFlowChart"?"↗":"◌"}</div><b>${message}</b><span>${detail}</span>`;empty.classList.remove("hidden")}
 function hideChartEmpty(canvas){const panel=canvas.closest(".chart-panel");if(!panel)return;canvas.style.display="block";panel.querySelector(`.chart-empty[data-for="${canvas.id}"]`)?.classList.add("hidden")}
-function updateCashFlowSummary(income,expense,title){
- const inc=sum(income),exp=sum(expense),net=inc-exp,rate=inc>0?(net/inc)*100:0;
- const i=document.getElementById("cashFlowIncomeSummary"),e=document.getElementById("cashFlowExpenseSummary"),n=document.getElementById("cashFlowNetSummary"),r=document.getElementById("cashFlowRateSummary");
- if(i)i.textContent=money(inc);
- if(e)e.textContent=money(exp);
+function updateCashFlowSummary(amounts,title){
+ const inc=sum(amounts.income),exp=sum(amounts.expense),sav=sum(amounts.savings),inv=sum(amounts.investments),prot=sum(amounts.protection);
+ const out=exp+sav+inv+prot,net=inc-out,rate=inc>0?(net/inc)*100:0;
+ const set=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=money(value)};
+ set("cashFlowIncomeSummary",inc);set("cashFlowExpenseSummary",exp);set("cashFlowSavingsSummary",sav);set("cashFlowInvestmentsSummary",inv);set("cashFlowProtectionSummary",prot);
+ const n=document.getElementById("cashFlowNetSummary"),r=document.getElementById("cashFlowRateSummary");
  if(n){n.textContent=money(net);n.classList.toggle("positive",net>0);n.classList.toggle("negative",net<0)}
- if(r)r.textContent=inc>0?`${rate.toFixed(1)}%`:exp>0?"N/A":"—";
+ if(r)r.textContent=inc>0?`${rate.toFixed(1)}%`:out>0?"N/A":"—";
  const panel=document.querySelector(".cash-flow-panel");
  if(panel)panel.dataset.period=title||"";
  const label=document.getElementById("cashFlowPeriodLabel");
  if(label)label.textContent=title?`Selected period: ${title}`:"";
  const incomeCount=document.getElementById("cashFlowIncomeCount"),expenseCount=document.getElementById("cashFlowExpenseCount");
- if(incomeCount)incomeCount.textContent=`${income.filter(v=>Number(v)>0).length} active period${income.filter(v=>Number(v)>0).length===1?"":"s"}`;
- if(expenseCount)expenseCount.textContent=`${expense.filter(v=>Number(v)>0).length} active period${expense.filter(v=>Number(v)>0).length===1?"":"s"}`;
+ if(incomeCount)incomeCount.textContent=`${amounts.income.filter(v=>Number(v)>0).length} active period${amounts.income.filter(v=>Number(v)>0).length===1?"":"s"}`;
+ if(expenseCount)expenseCount.textContent=`${amounts.expense.filter(v=>Number(v)>0).length} active period${amounts.expense.filter(v=>Number(v)>0).length===1?"":"s"}`;
 }
 function filterExpensesForCashPeriod(period){
  if(period.type==="day")return data.expense.filter(x=>period.keys.includes(String(x.date||"")));
@@ -368,14 +386,22 @@ function updateCharts(){
  const range=document.getElementById("chartRange")?.value||"This month";
  const period=getCashFlowPeriods(range);
  const amounts=getCashFlowAmounts(period);
- updateCashFlowSummary(amounts.income,amounts.expense,period.title);
+ updateCashFlowSummary(amounts,period.title);
  if(cashChart){cashChart.destroy();cashChart=null}
- const hasActivity=amounts.income.some(v=>v>0)||amounts.expense.some(v=>v>0);
- if(!hasActivity){showChartEmpty(cashCanvas,"No financial activity for this period","Add income or spending records to build your cash-flow report.")}
+ const featureSeries=[amounts.income,amounts.expense,amounts.savings,amounts.investments,amounts.protection];
+ const hasActivity=featureSeries.some(series=>series.some(v=>Number(v)>0));
+ if(!hasActivity){showChartEmpty(cashCanvas,"No financial activity for this period","Add records in Income, Spending, Savings, Investments, or Protection.")}
  else{
   hideChartEmpty(cashCanvas);
-  const netVals=amounts.income.map((v,i)=>v-amounts.expense[i]);
-  cashChart=new Chart(cashCanvas,{type:"bar",data:{labels:period.labels,datasets:[{label:"Income",data:amounts.income,borderWidth:0,borderRadius:5},{label:"Spending",data:amounts.expense,borderWidth:0,borderRadius:5},{label:"Net",data:netVals,type:"line",borderWidth:2,tension:.3,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},plugins:{legend:{position:"bottom",labels:{font:{size:10}}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${money(c.raw)}`}}},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v)}},x:{grid:{display:false}}}}});
+  const netVals=period.labels.map((_,i)=>amounts.income[i]-amounts.expense[i]-amounts.savings[i]-amounts.investments[i]-amounts.protection[i]);
+  cashChart=new Chart(cashCanvas,{type:"bar",data:{labels:period.labels,datasets:[
+   {label:"Income",data:amounts.income,borderWidth:0,borderRadius:5},
+   {label:"Spending",data:amounts.expense,borderWidth:0,borderRadius:5},
+   {label:"Savings",data:amounts.savings,borderWidth:0,borderRadius:5},
+   {label:"Investments",data:amounts.investments,borderWidth:0,borderRadius:5},
+   {label:"Protection",data:amounts.protection,borderWidth:0,borderRadius:5},
+   {label:"Net",data:netVals,type:"line",borderWidth:2,tension:.3,pointRadius:3}
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},plugins:{legend:{position:"bottom",labels:{font:{size:10}}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${money(c.raw)}`}}},scales:{y:{beginAtZero:true,ticks:{callback:v=>money(v)}},x:{grid:{display:false}}}}});
  }
  const expenseRecords=filterExpensesForCashPeriod(period);
  const cats={};expenseRecords.forEach(x=>cats[x.cat]=(cats[x.cat]||0)+Number(x.amount));let labels=Object.keys(cats);let vals=Object.values(cats);const expenseCanvas=document.getElementById("expenseChart");
@@ -386,7 +412,7 @@ function updateCharts(){
  else{hideChartEmpty(expenseCanvas);expenseChart=new Chart(expenseCanvas,{type:"doughnut",data:{labels,datasets:[{data:vals,borderWidth:0}]},options:{cutout:"73%",plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${money(c.raw)}`}}}}});document.getElementById("donutTotal").textContent=money(sum(expenseRecords,"amount"));const colors=["#635bff","#18a86b","#e5a12e","#ed5c61","#4285e8","#9a6be8"];legend.innerHTML=labels.map((l,i)=>`<span style="--c:${colors[i%colors.length]}">${escapeHtml(l)} ${money(cats[l])}</span>`).join("")}
 }
 function openModal(type="income"){formType.value=type;modalTitle.textContent=type==="income"?"Add Income":"Add Expense";fCategory.innerHTML=(type==="income"?["Salary","Freelance","Business","Bonus","Other"]:["Food","Bills","Transport","Shopping","Entertainment","Health","Other"]).map(x=>`<option>${x}</option>`).join("");fDate.value=today;fDesc.value="";fAmount.value="";fNotes.value="";modal.classList.remove("hidden")}
-function updateDashboardMode(){const admin=isAdmin();document.body.classList.toggle("admin-mode",admin);const regular=document.getElementById("regularDashboardView"),view=document.getElementById("adminDashboardView"),quick=document.getElementById("quickAdd");if(regular)regular.classList.toggle("hidden",admin);if(view)view.classList.toggle("hidden",!admin);if(quick)quick.classList.toggle("hidden",admin);const profileType=document.querySelector("#profileName + small");if(profileType)profileType.textContent=admin?"Administrator":"Personal Account";}
+function updateDashboardMode(){const admin=isAdmin();document.body.classList.toggle("admin-mode",admin);const regular=document.getElementById("regularDashboardView"),view=document.getElementById("adminDashboardView");if(regular)regular.classList.toggle("hidden",admin);if(view)view.classList.toggle("hidden",!admin);const profileType=document.querySelector("#profileName + small");if(profileType)profileType.textContent=admin?"Administrator":"Personal Account";}
 function showPage(id){
  const admin=isAdmin();
  const clientAllowed=["dashboard","income","expenses","savings","investments","protection","reports","settings"];
@@ -401,7 +427,7 @@ function showPage(id){
  if(innerWidth<=700)setSidebarOpen(false)
 }
 document.querySelectorAll(".nav-link,[data-page]").forEach(a=>a.addEventListener("click",()=>showPage(a.dataset.page)));
-quickAdd.onclick=()=>openModal("expense");closeModal.onclick=()=>modal.classList.add("hidden");modal.onclick=e=>{if(e.target===modal)modal.classList.add("hidden")};
+closeModal.onclick=()=>modal.classList.add("hidden");modal.onclick=e=>{if(e.target===modal)modal.classList.add("hidden")};
 document.querySelectorAll(".add-page").forEach(b=>b.onclick=()=>openModal(b.dataset.type));
 transactionForm.onsubmit=e=>{
  e.preventDefault();

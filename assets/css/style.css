@@ -126,7 +126,6 @@ body.dark .settings-section-title{border-color:#2a3140}.dark .settings-icon{back
 body.admin-mode .sidebar .nav-link:not([data-page="dashboard"]) { display: none !important; }
 body.admin-mode .sidebar nav { margin-bottom: 0; }
 body.admin-mode .sidebar-bottom > .nav-link[data-page="settings"] { display: none !important; }
-body.admin-mode #quickAdd { display: none !important; }
 body.admin-mode .admin-dashboard-view { margin-top: 0; }
 body.admin-mode .sidebar .profile small { color: #8f9ab0; }
 
